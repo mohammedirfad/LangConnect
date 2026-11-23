@@ -1,0 +1,39 @@
+{
+  "name": "@landconnect/api",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "tsx watch src/server.ts",
+    "build": "tsc -p tsconfig.json",
+    "start": "node dist/server.js",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "lint": "eslint .",
+    "db:generate": "prisma generate",
+    "db:migrate": "prisma migrate dev"
+  },
+  "dependencies": {
+    "@fastify/cors": "^10.0.2",
+    "@fastify/helmet": "^13.2.0",
+    "@fastify/rate-limit": "^10.2.1",
+    "@fastify/compress": "^8.0.1",
+    "@prisma/client": "^6.2.1",
+    "argon2": "^0.41.1",
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "fastify": "^5.2.1",
+    "jsonwebtoken": "^9.0.2",
+    "livekit-server-sdk": "^2.9.6",
+    "pino": "^9.6.0",
+    "socket.io": "^4.8.1",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@types/jsonwebtoken": "^9.0.7",
+    "@types/node": "^22.13.4",
+    "eslint": "^10.0.0",
+    "prisma": "^6.2.1",
+    "tsx": "^4.19.3",
+    "typescript": "^6.0.3"
+  }
+}

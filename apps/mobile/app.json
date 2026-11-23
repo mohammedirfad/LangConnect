@@ -1,0 +1,22 @@
+{
+  "expo": {
+    "name": "LandConnect",
+    "slug": "landconnect",
+    "scheme": "landconnect",
+    "version": "0.1.0",
+    "orientation": "portrait",
+    "userInterfaceStyle": "light",
+    "newArchEnabled": true,
+    "plugins": [
+      "expo-router",
+      "expo-secure-store",
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc",
+      ["expo-image-picker", { "photosPermission": "Choose listing photos to upload." }],
+      ["expo-location", { "locationWhenInUsePermission": "Show nearby land listings and select a listing location." }]
+    ],
+    "experiments": { "typedRoutes": true },
+    "android": { "package": "com.landconnect.app" },
+    "ios": { "bundleIdentifier": "com.landconnect.app" }
+  }
+}

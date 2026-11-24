@@ -10,7 +10,8 @@
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "lint": "eslint .",
     "db:generate": "prisma generate",
-    "db:migrate": "prisma migrate dev"
+    "db:migrate": "prisma migrate dev",
+    "test": "tsx --test src/modules/auth/auth.service.test.ts src/modules/auth/auth.routes.test.ts src/plugins/authenticate.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",

@@ -1,16 +1,27 @@
-import { StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { Redirect } from 'expo-router';
+import { useAuthStore } from '../src/auth/store';
+import { theme } from '../src/theme';
 
 export default function HomeScreen() {
-  return (
-    <View style={styles.container}>
-      <Text style={styles.title}>LandConnect</Text>
-      <Text style={styles.subtitle}>A better way to find your next piece of land.</Text>
-    </View>
-  );
+  const isHydrating = useAuthStore((state) => state.isHydrating);
+  const user = useAuthStore((state) => state.user);
+
+  if (isHydrating) {
+    return (
+      <View style={styles.loading}>
+        <ActivityIndicator size="large" color={theme.colors.brand} />
+      </View>
+    );
+  }
+  return <Redirect href={user ? '/home' : '/login'} />;
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, alignItems: 'center', justifyContent: 'center', backgroundColor: '#f6faf7' },
-  title: { color: '#075e54', fontSize: 32, fontWeight: '700' },
-  subtitle: { color: '#50645a', fontSize: 16, marginTop: 10 },
+  loading: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+    backgroundColor: theme.colors.background,
+  },
 });

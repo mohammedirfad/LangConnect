@@ -13,6 +13,10 @@ import { createAuthRoutes } from './modules/auth/auth.routes.js';
 import { AuthRepository } from './modules/auth/auth.repository.js';
 import { AuthService } from './modules/auth/auth.service.js';
 import { openApiDocument, swaggerUiHtml } from './openapi.js';
+import { CallRepository } from './modules/calls/call.repository.js';
+import { createCallRoutes } from './modules/calls/call.routes.js';
+import { CallService } from './modules/calls/call.service.js';
+import { LiveKitTokenService } from './modules/calls/livekit-token.service.js';
 
 export async function buildApp(database: PrismaService = prisma): Promise<FastifyInstance> {
   const app = Fastify({
@@ -122,6 +126,15 @@ export async function buildApp(database: PrismaService = prisma): Promise<Fastif
     refreshTokenTtlDays: env.REFRESH_TOKEN_TTL_DAYS,
   });
   await app.register(createAuthRoutes(service), { prefix: '/api/v1/auth' });
+  const calls = new CallService(
+    new CallRepository(database),
+    new LiveKitTokenService({
+      url: env.LIVEKIT_URL,
+      apiKey: env.LIVEKIT_API_KEY,
+      apiSecret: env.LIVEKIT_API_SECRET,
+    }),
+  );
+  await app.register(createCallRoutes(calls), { prefix: '/api/v1/calls' });
   app.addHook('onClose', async () => {
     if (database === prisma) await database.$disconnect();
   });

@@ -24,4 +24,10 @@ Login and registration use per-IP rate limits. Refresh and logout have separate 
 
 The reusable `authenticate` pre-handler validates access-token identity. `requireRole('SELLER', 'BROKER')` is available for seller/broker-only operations. Ownership checks will be added with listing endpoints.
 
+## Direct calls (Phase 2)
+
+All call routes require a bearer access token and are rate limited. `POST /api/v1/calls` accepts `{ "calleeId": "<user UUID>", "type": "AUDIO" | "VIDEO" }` and creates a `RINGING` call. A caller can read the call ID/status; only the callee can accept it with `POST /api/v1/calls/{callId}/join`. Once accepted, both participants can request their own LiveKit token from that join route. `GET /api/v1/calls/{callId}` is participant-only; `POST /api/v1/calls/{callId}/end` ends the call and asks LiveKit to delete the room.
+
+Tokens are signed on the server, limited to one room and one opaque participant identity, expire in 10 minutes, and cannot publish data tracks. The server never returns the LiveKit API secret. Users who have blocked one another cannot create calls. Phase 2 uses a shared call ID for manual two-device testing; socket invitations, ringing notifications, busy state, rejection, and 30-second missed-call handling belong to Phase 3.
+
 All request bodies, parameters, and query strings will be validated with Zod. Responses use explicit DTOs, and authentication failures and server errors will not expose stack traces or secrets. Email is returned only from authenticated account endpoints; public listing DTOs will omit email and phone.

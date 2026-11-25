@@ -11,7 +11,7 @@
     "lint": "eslint .",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "test": "tsx --test src/modules/auth/auth.service.test.ts src/modules/auth/auth.routes.test.ts src/plugins/authenticate.test.ts"
+    "test": "tsx --test src/modules/auth/auth.service.test.ts src/modules/auth/auth.routes.test.ts src/plugins/authenticate.test.ts src/modules/calls/livekit-token.service.test.ts src/modules/calls/call.service.test.ts src/modules/calls/call.routes.test.ts"
   },
   "dependencies": {
     "@fastify/cors": "^10.0.2",

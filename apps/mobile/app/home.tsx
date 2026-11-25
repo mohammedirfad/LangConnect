@@ -46,6 +46,7 @@ export default function HomeScreen() {
           Marketplace listings and calls will appear here in upcoming setup steps.
         </AppText>
       </View>
+      <PrimaryButton title="Audio & video calls" onPress={() => router.push('/calls')} />
       <View style={styles.spacer} />
       <PrimaryButton title="Sign out" loading={logout.isPending} onPress={() => logout.mutate()} />
     </View>

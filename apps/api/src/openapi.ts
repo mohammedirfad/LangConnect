@@ -15,7 +15,7 @@ export const openApiDocument = {
       'Development API reference. Register or log in to get an access token, then use Authorize to test protected endpoints.',
   },
   servers: [{ url: '/', description: 'This LandConnect API server' }],
-  tags: [{ name: 'Health' }, { name: 'Authentication' }],
+  tags: [{ name: 'Health' }, { name: 'Authentication' }, { name: 'Calls' }],
   paths: {
     '/health': {
       get: {
@@ -149,6 +149,108 @@ export const openApiDocument = {
         },
       },
     },
+    '/api/v1/calls': {
+      post: {
+        tags: ['Calls'],
+        summary: 'Create a direct call request',
+        description:
+          'Only authenticated users can create calls. Tokens are issued after the callee joins.',
+        security: [{ bearerAuth: [] }],
+        requestBody: {
+          required: true,
+          content: {
+            'application/json': { schema: { $ref: '#/components/schemas/CreateCallInput' } },
+          },
+        },
+        responses: {
+          '201': {
+            description: 'Call created',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/CallResponse' } },
+            },
+          },
+          '401': { description: 'Missing or invalid access token', content: errorContent },
+          '404': { description: 'Call target unavailable or blocked', content: errorContent },
+          '429': { description: 'Rate limit reached', content: errorContent },
+        },
+      },
+    },
+    '/api/v1/calls/{callId}': {
+      get: {
+        tags: ['Calls'],
+        summary: 'Get call status as a participant',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'callId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Call status',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/CallResponse' } },
+            },
+          },
+          '404': { description: 'Call not found or not a participant', content: errorContent },
+        },
+      },
+    },
+    '/api/v1/calls/{callId}/join': {
+      post: {
+        tags: ['Calls'],
+        summary: 'Accept a call or join an accepted call',
+        description:
+          'The callee accepts by joining. Only one of the two participants can receive a room token. Tokens expire after 10 minutes and are scoped to this call room.',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'callId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Call accepted or joined',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/CallJoinResponse' } },
+            },
+          },
+          '404': { description: 'Call not joinable or not a participant', content: errorContent },
+          '429': { description: 'Rate limit reached', content: errorContent },
+        },
+      },
+    },
+    '/api/v1/calls/{callId}/end': {
+      post: {
+        tags: ['Calls'],
+        summary: 'End a call as a participant',
+        security: [{ bearerAuth: [] }],
+        parameters: [
+          {
+            name: 'callId',
+            in: 'path',
+            required: true,
+            schema: { type: 'string', format: 'uuid' },
+          },
+        ],
+        responses: {
+          '200': {
+            description: 'Call ended',
+            content: {
+              'application/json': { schema: { $ref: '#/components/schemas/CallResponse' } },
+            },
+          },
+          '404': { description: 'Call not found or not a participant', content: errorContent },
+          '429': { description: 'Rate limit reached', content: errorContent },
+        },
+      },
+    },
   },
   components: {
     securitySchemes: {
@@ -206,6 +308,61 @@ export const openApiDocument = {
           refreshToken: { type: 'string' },
         },
       },
+      CreateCallInput: {
+        type: 'object',
+        additionalProperties: false,
+        required: ['calleeId', 'type'],
+        properties: {
+          calleeId: { type: 'string', format: 'uuid' },
+          type: { type: 'string', enum: ['AUDIO', 'VIDEO'] },
+        },
+      },
+      Call: {
+        type: 'object',
+        required: [
+          'id',
+          'callerId',
+          'calleeId',
+          'roomName',
+          'type',
+          'status',
+          'startedAt',
+          'acceptedAt',
+          'endedAt',
+        ],
+        properties: {
+          id: { type: 'string', format: 'uuid' },
+          callerId: { type: 'string', format: 'uuid' },
+          calleeId: { type: 'string', format: 'uuid' },
+          roomName: { type: 'string' },
+          type: { type: 'string', enum: ['AUDIO', 'VIDEO'] },
+          status: { type: 'string', enum: ['RINGING', 'ACCEPTED', 'REJECTED', 'MISSED', 'ENDED'] },
+          startedAt: { type: 'string', format: 'date-time' },
+          acceptedAt: { type: 'string', format: 'date-time', nullable: true },
+          endedAt: { type: 'string', format: 'date-time', nullable: true },
+        },
+      },
+      CallResponse: {
+        type: 'object',
+        required: ['call'],
+        properties: { call: { $ref: '#/components/schemas/Call' } },
+      },
+      CallJoinResponse: {
+        type: 'object',
+        required: ['call', 'livekit'],
+        properties: {
+          call: { $ref: '#/components/schemas/Call' },
+          livekit: {
+            type: 'object',
+            required: ['url', 'token', 'expiresInSeconds'],
+            properties: {
+              url: { type: 'string', format: 'uri' },
+              token: { type: 'string' },
+              expiresInSeconds: { type: 'integer', enum: [600] },
+            },
+          },
+        },
+      },
       ApiError: {
         type: 'object',
         required: ['error'],
@@ -213,7 +370,18 @@ export const openApiDocument = {
           error: {
             type: 'object',
             required: ['code', 'message'],
-            properties: { code: { type: 'string' }, message: { type: 'string' } },
+            properties: {
+              code: { type: 'string' },
+              message: { type: 'string' },
+              issues: {
+                type: 'array',
+                items: {
+                  type: 'object',
+                  required: ['path', 'message'],
+                  properties: { path: { type: 'string' }, message: { type: 'string' } },
+                },
+              },
+            },
           },
         },
       },

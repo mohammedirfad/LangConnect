@@ -58,6 +58,23 @@ test('call routes accept the callee and issue room-scoped tokens only to partici
       'caller must not receive a room token before acceptance',
     );
 
+    const activeCall = await app.inject({
+      method: 'GET',
+      url: '/api/v1/calls/active',
+      headers: calleeAuth,
+    });
+    assert.equal(activeCall.statusCode, 200);
+    assert.equal(activeCall.json<{ call: { id: string } | null }>().call?.id, callId);
+
+    const busyInvite = await app.inject({
+      method: 'POST',
+      url: '/api/v1/calls',
+      headers: callerAuth,
+      payload: { calleeId: users[1], type: CallType.AUDIO },
+    });
+    assert.equal(busyInvite.statusCode, 409);
+    assert.equal(busyInvite.json<{ error: { code: string } }>().error.code, 'CALL_BUSY');
+
     const prematureCallerJoin = await app.inject({
       method: 'POST',
       url: `/api/v1/calls/${callId}/join`,

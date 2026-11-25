@@ -17,6 +17,7 @@ import { CallRepository } from './modules/calls/call.repository.js';
 import { createCallRoutes } from './modules/calls/call.routes.js';
 import { CallService } from './modules/calls/call.service.js';
 import { LiveKitTokenService } from './modules/calls/livekit-token.service.js';
+import { attachCallGateway } from './modules/calls/call.gateway.js';
 
 export async function buildApp(database: PrismaService = prisma): Promise<FastifyInstance> {
   const app = Fastify({
@@ -135,7 +136,9 @@ export async function buildApp(database: PrismaService = prisma): Promise<Fastif
     }),
   );
   await app.register(createCallRoutes(calls), { prefix: '/api/v1/calls' });
+  const callGateway = attachCallGateway(app.server, calls);
   app.addHook('onClose', async () => {
+    await callGateway.close();
     if (database === prisma) await database.$disconnect();
   });
 

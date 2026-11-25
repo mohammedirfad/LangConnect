@@ -25,12 +25,56 @@ export class CallService {
   ) {}
 
   async create(input: { callerId: string; calleeId: string; type: CallType }) {
-    const call = await this.repository.create({ ...input, id: randomUUID() });
-    if (!call) {
+    const result = await this.repository.create({ ...input, id: randomUUID() });
+    if (result.kind === 'unavailable') {
       throw new AppError(404, 'CALL_TARGET_UNAVAILABLE', 'That user is unavailable for a call.');
     }
-    // Do not issue room access until the callee accepts by joining.
+    if (result.kind === 'busy') {
+      throw new AppError(409, 'CALL_BUSY', 'One of the participants is already in a call.');
+    }
+    // Do not issue room access until the callee accepts the invitation.
+    return { call: toCallDto(result.call) };
+  }
+
+  async accept(callId: string, userId: string) {
+    const call = await this.repository.accept(callId, userId);
+    if (!call) {
+      throw new AppError(409, 'CALL_NOT_ACCEPTABLE', 'This call is no longer available to accept.');
+    }
+    const [calleeLiveKit, callerLiveKit] = await Promise.all([
+      this.tokenService.createParticipantToken({
+        callId: call.id,
+        roomName: call.roomName,
+        userId: call.calleeId,
+      }),
+      this.tokenService.createParticipantToken({
+        callId: call.id,
+        roomName: call.roomName,
+        userId: call.callerId,
+      }),
+    ]);
+    return {
+      call: toCallDto(call),
+      callee: { call: toCallDto(call), livekit: calleeLiveKit },
+      caller: { call: toCallDto(call), livekit: callerLiveKit },
+    };
+  }
+
+  async reject(callId: string, userId: string) {
+    const call = await this.repository.reject(callId, userId);
+    if (!call) {
+      throw new AppError(409, 'CALL_NOT_REJECTABLE', 'This call is no longer ringing.');
+    }
     return { call: toCallDto(call) };
+  }
+
+  async markMissed(callId: string) {
+    const call = await this.repository.markMissed(callId);
+    return call ? { call: toCallDto(call) } : null;
+  }
+
+  async findExpiredRinging(cutoff: Date) {
+    return this.repository.findExpiredRinging(cutoff);
   }
 
   async join(callId: string, userId: string) {
@@ -60,6 +104,11 @@ export class CallService {
     if (!call)
       throw new AppError(404, 'CALL_NOT_FOUND', 'Call not found or you are not a participant.');
     return { call: toCallDto(call) };
+  }
+
+  async getActiveForUser(userId: string) {
+    const call = await this.repository.findActiveForUser(userId);
+    return { call: call ? toCallDto(call) : null };
   }
 
   async end(callId: string, userId: string) {

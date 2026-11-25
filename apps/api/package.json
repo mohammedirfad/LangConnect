@@ -11,13 +11,13 @@
     "lint": "eslint .",
     "db:generate": "prisma generate",
     "db:migrate": "prisma migrate dev",
-    "test": "tsx --test src/modules/auth/auth.service.test.ts src/modules/auth/auth.routes.test.ts src/plugins/authenticate.test.ts src/modules/calls/livekit-token.service.test.ts src/modules/calls/call.service.test.ts src/modules/calls/call.routes.test.ts"
+    "test": "tsx --test src/modules/auth/auth.service.test.ts src/modules/auth/auth.routes.test.ts src/plugins/authenticate.test.ts src/modules/calls/livekit-token.service.test.ts src/modules/calls/call.service.test.ts src/modules/calls/call.gateway.test.ts src/modules/calls/call.gateway.integration.test.ts src/modules/calls/call.routes.test.ts"
   },
   "dependencies": {
+    "@fastify/compress": "^8.0.1",
     "@fastify/cors": "^10.0.2",
     "@fastify/helmet": "^13.2.0",
     "@fastify/rate-limit": "^10.2.1",
-    "@fastify/compress": "^8.0.1",
     "@prisma/client": "^6.2.1",
     "argon2": "^0.41.1",
     "axios": "^1.7.9",
@@ -34,6 +34,7 @@
     "@types/node": "^22.13.4",
     "eslint": "^10.0.0",
     "prisma": "^6.2.1",
+    "socket.io-client": "4.8.1",
     "tsx": "^4.19.3",
     "typescript": "^6.0.3"
   }

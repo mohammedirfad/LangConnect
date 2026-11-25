@@ -18,6 +18,7 @@ import { Track } from 'livekit-client';
 import { AppText } from '../components/AppText';
 import { InlineError } from '../components/InlineError';
 import { callsApi } from './api';
+import { emitCallEvent } from './socket';
 import { useCallStore } from './store';
 import { theme } from '../theme';
 
@@ -64,9 +65,13 @@ export default function CallRoom() {
   const leave = useCallback(async () => {
     if (!session) return;
     try {
-      await callsApi.end(session.callId);
+      await emitCallEvent('call:end', { callId: session.callId });
     } catch {
-      // Always let the user leave locally if the API is unavailable.
+      try {
+        await callsApi.end(session.callId);
+      } catch {
+        // Always let the user leave locally if signaling and the API are unavailable.
+      }
     } finally {
       clearSession();
       router.replace('/calls');

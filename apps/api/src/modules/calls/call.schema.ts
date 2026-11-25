@@ -10,4 +10,7 @@ export const createCallSchema = z
 
 export const callIdParamsSchema = z.object({ callId: z.string().uuid() }).strict();
 
+export const inviteCallSchema = createCallSchema;
+export const callActionSchema = z.object({ callId: z.string().uuid() }).strict();
+
 export type CreateCallInput = z.infer<typeof createCallSchema>;

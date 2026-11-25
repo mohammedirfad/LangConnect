@@ -30,6 +30,10 @@ export function getCallStatusController(service: CallService) {
   };
 }
 
+export function getActiveCallController(service: CallService) {
+  return async (request: FastifyRequest) => service.getActiveForUser(requireUserId(request));
+}
+
 export function endCallController(service: CallService) {
   return async (request: FastifyRequest) => {
     const { callId } = callIdParamsSchema.parse(request.params);

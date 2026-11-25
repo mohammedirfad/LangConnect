@@ -11,6 +11,15 @@ class MemoryCallRepository implements CallRepositoryPort {
   private call: CallRecord | null = null;
 
   async create(input: { id: string; callerId: string; calleeId: string; type: CallType }) {
+    if (
+      this.call &&
+      [CallStatus.RINGING, CallStatus.ACCEPTED].includes(this.call.status) &&
+      [this.call.callerId, this.call.calleeId].some((id) =>
+        [input.callerId, input.calleeId].includes(id),
+      )
+    ) {
+      return { kind: 'busy' as const, busyUserId: this.call.callerId };
+    }
     this.call = {
       id: input.id,
       callerId: input.callerId,
@@ -22,7 +31,38 @@ class MemoryCallRepository implements CallRepositoryPort {
       acceptedAt: null,
       endedAt: null,
     };
+    return { kind: 'created' as const, call: this.call };
+  }
+
+  async accept(callId: string, userId: string) {
+    if (!this.call || this.call.id !== callId || this.call.calleeId !== userId) return null;
+    if (this.call.status === CallStatus.RINGING) {
+      this.call = { ...this.call, status: CallStatus.ACCEPTED, acceptedAt: new Date() };
+    } else if (this.call.status !== CallStatus.ACCEPTED) return null;
     return this.call;
+  }
+
+  async reject(callId: string, userId: string) {
+    if (
+      !this.call ||
+      this.call.id !== callId ||
+      this.call.calleeId !== userId ||
+      this.call.status !== CallStatus.RINGING
+    )
+      return null;
+    this.call = { ...this.call, status: CallStatus.REJECTED, endedAt: new Date() };
+    return this.call;
+  }
+
+  async markMissed(callId: string) {
+    if (!this.call || this.call.id !== callId || this.call.status !== CallStatus.RINGING)
+      return null;
+    this.call = { ...this.call, status: CallStatus.MISSED, endedAt: new Date() };
+    return this.call;
+  }
+
+  async findExpiredRinging(_cutoff: Date) {
+    return this.call?.status === CallStatus.RINGING ? [this.call] : [];
   }
 
   async join(callId: string, userId: string) {
@@ -40,6 +80,11 @@ class MemoryCallRepository implements CallRepositoryPort {
   async findForParticipant(callId: string, userId: string) {
     if (!this.call || this.call.id !== callId) return null;
     return userId === this.call.callerId || userId === this.call.calleeId ? this.call : null;
+  }
+
+  async findActiveForUser(userId: string) {
+    if (!this.call || ![this.call.callerId, this.call.calleeId].includes(userId)) return null;
+    return [CallStatus.RINGING, CallStatus.ACCEPTED].includes(this.call.status) ? this.call : null;
   }
 
   async end(callId: string, userId: string) {
@@ -101,4 +146,54 @@ test('callee acceptance gates room tokens; only participants can join or end', a
   assert.equal(ended.call.status, CallStatus.ENDED);
   assert.deepEqual(tokens.deletedRooms, [created.call.roomName]);
   await assert.rejects(service.join(created.call.id, calleeId), AppError);
+});
+
+test('busy accounts cannot be invited into a second active call', async () => {
+  const repository = new MemoryCallRepository();
+  const service = new CallService(repository, new MemoryTokenService());
+  const callerId = randomUUID();
+  const calleeId = randomUUID();
+  const otherId = randomUUID();
+  await service.create({ callerId, calleeId, type: CallType.AUDIO });
+
+  await assert.rejects(
+    service.create({ callerId: otherId, calleeId, type: CallType.VIDEO }),
+    (error: unknown) => {
+      assert.ok(error instanceof AppError);
+      assert.equal(error.statusCode, 409);
+      assert.equal(error.code, 'CALL_BUSY');
+      return true;
+    },
+  );
+});
+
+test('callee can reject a ring and stale rings become missed', async () => {
+  const repository = new MemoryCallRepository();
+  const service = new CallService(repository, new MemoryTokenService());
+  const callerId = randomUUID();
+  const calleeId = randomUUID();
+  const rejected = await service.create({ callerId, calleeId, type: CallType.AUDIO });
+
+  const rejection = await service.reject(rejected.call.id, calleeId);
+  assert.equal(rejection.call.status, CallStatus.REJECTED);
+  await assert.rejects(service.accept(rejected.call.id, calleeId), AppError);
+
+  const missedCall = await service.create({ callerId, calleeId, type: CallType.VIDEO });
+  const missed = await service.markMissed(missedCall.call.id);
+  assert.equal(missed?.call.status, CallStatus.MISSED);
+  assert.equal(await service.markMissed(missedCall.call.id), null);
+});
+
+test('active call recovery only returns the authenticated participant’s call', async () => {
+  const repository = new MemoryCallRepository();
+  const service = new CallService(repository, new MemoryTokenService());
+  const callerId = randomUUID();
+  const calleeId = randomUUID();
+  const outsiderId = randomUUID();
+  const created = await service.create({ callerId, calleeId, type: CallType.AUDIO });
+
+  assert.equal((await service.getActiveForUser(calleeId)).call?.id, created.call.id);
+  assert.equal((await service.getActiveForUser(outsiderId)).call, null);
+  await service.reject(created.call.id, calleeId);
+  assert.equal((await service.getActiveForUser(callerId)).call, null);
 });

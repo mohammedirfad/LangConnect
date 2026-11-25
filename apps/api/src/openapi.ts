@@ -152,9 +152,9 @@ export const openApiDocument = {
     '/api/v1/calls': {
       post: {
         tags: ['Calls'],
-        summary: 'Create a direct call request',
+        summary: 'Create a direct call request (REST fallback)',
         description:
-          'Only authenticated users can create calls. Tokens are issued after the callee joins.',
+          'Only authenticated users can create calls. Tokens are issued after the callee accepts. Realtime clients should use the authenticated Socket.IO call:invite event.',
         security: [{ bearerAuth: [] }],
         requestBody: {
           required: true,
@@ -171,6 +171,10 @@ export const openApiDocument = {
           },
           '401': { description: 'Missing or invalid access token', content: errorContent },
           '404': { description: 'Call target unavailable or blocked', content: errorContent },
+          '409': {
+            description: 'One participant is already in another call',
+            content: errorContent,
+          },
           '429': { description: 'Rate limit reached', content: errorContent },
         },
       },
@@ -196,6 +200,31 @@ export const openApiDocument = {
             },
           },
           '404': { description: 'Call not found or not a participant', content: errorContent },
+        },
+      },
+    },
+    '/api/v1/calls/active': {
+      get: {
+        tags: ['Calls'],
+        summary: 'Recover the authenticated user’s active call after reconnecting',
+        security: [{ bearerAuth: [] }],
+        responses: {
+          '200': {
+            description: 'Current ringing or accepted call, or null when there is none',
+            content: {
+              'application/json': {
+                schema: {
+                  type: 'object',
+                  required: ['call'],
+                  properties: {
+                    call: { anyOf: [{ $ref: '#/components/schemas/Call' }, { type: 'null' }] },
+                  },
+                },
+              },
+            },
+          },
+          '401': { description: 'Missing or invalid access token', content: errorContent },
+          '429': { description: 'Rate limit reached', content: errorContent },
         },
       },
     },

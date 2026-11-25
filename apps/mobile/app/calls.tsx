@@ -1,6 +1,5 @@
 import { useState } from 'react';
 import { Redirect, router } from 'expo-router';
-import { useMutation, useQuery } from '@tanstack/react-query';
 import { Ionicons } from '@expo/vector-icons';
 import { Pressable, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText } from '../src/components/AppText';
@@ -9,48 +8,40 @@ import { InlineError } from '../src/components/InlineError';
 import { PrimaryButton } from '../src/components/PrimaryButton';
 import { useAuthStore } from '../src/auth/store';
 import { apiErrorMessage } from '../src/api/error-message';
-import { callsApi, type CallType } from '../src/calls/api';
+import type { CallDto, CallType } from '../src/calls/api';
+import { emitCallEvent } from '../src/calls/socket';
 import { useCallStore } from '../src/calls/store';
 import { theme } from '../src/theme';
 
-type CallMode = 'start' | 'join';
-
 export default function CallsScreen() {
   const user = useAuthStore((state) => state.user);
-  const setCallSession = useCallStore((state) => state.setSession);
-  const [mode, setMode] = useState<CallMode>('start');
+  const setOutgoingCall = useCallStore((state) => state.setOutgoingCall);
+  const lastOutcome = useCallStore((state) => state.lastOutcome);
+  const clearOutcome = useCallStore((state) => state.setLastOutcome);
   const [calleeId, setCalleeId] = useState('');
-  const [callIdInput, setCallIdInput] = useState('');
-  const [createdCallId, setCreatedCallId] = useState<string | null>(null);
   const [callType, setCallType] = useState<CallType>('VIDEO');
-  const createCall = useMutation({
-    mutationFn: () => callsApi.create({ calleeId: calleeId.trim(), type: callType }),
-    onSuccess: ({ call }) => setCreatedCallId(call.id),
-  });
-  const status = useQuery({
-    queryKey: ['call-status', createdCallId],
-    queryFn: () => callsApi.status(createdCallId!),
-    enabled: mode === 'start' && Boolean(createdCallId),
-    refetchInterval: (query) => (query.state.data?.call.status === 'RINGING' ? 2500 : false),
-  });
-  const joinCall = useMutation({
-    mutationFn: (id: string) => callsApi.join(id.trim()),
-    onSuccess: ({ call, livekit }) => {
-      setCallSession({
-        callId: call.id,
-        roomName: call.roomName,
-        type: call.type,
-        url: livekit.url,
-        token: livekit.token,
-      });
-      router.replace('/call-room');
-    },
-  });
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<unknown>(null);
 
   if (!user) return <Redirect href="/login" />;
 
-  const accepted = status.data?.call.status === 'ACCEPTED';
-  const error = createCall.error ?? joinCall.error ?? (status.isError ? status.error : null);
+  const startCall = async () => {
+    setPending(true);
+    setError(null);
+    clearOutcome(null);
+    try {
+      const result = await emitCallEvent<{ call: CallDto }>('call:invite', {
+        calleeId: calleeId.trim(),
+        type: callType,
+      });
+      setOutgoingCall(result.call);
+      router.push('/outgoing-call' as never);
+    } catch (cause) {
+      setError(cause);
+    } finally {
+      setPending(false);
+    }
+  };
 
   return (
     <ScrollView contentContainerStyle={styles.page} keyboardShouldPersistTaps="handled">
@@ -65,6 +56,19 @@ export default function CallsScreen() {
         </View>
       </View>
 
+      {lastOutcome ? (
+        <View style={styles.outcome}>
+          <Ionicons name="information-circle-outline" size={19} color={theme.colors.brand} />
+          <AppText style={styles.outcomeText}>
+            {lastOutcome === 'REJECTED'
+              ? 'The call was declined.'
+              : lastOutcome === 'MISSED'
+                ? 'The call was not answered.'
+                : 'The call has ended.'}
+          </AppText>
+        </View>
+      ) : null}
+
       <View style={styles.identityCard}>
         <View style={styles.identityIcon}>
           <Ionicons name="finger-print-outline" size={18} color={theme.colors.brand} />
@@ -78,136 +82,49 @@ export default function CallsScreen() {
         <AppText style={styles.copyHint}>SELECT TO COPY</AppText>
       </View>
 
-      <View style={styles.modeSwitch}>
-        <Pressable
-          accessibilityRole="tab"
-          accessibilityState={{ selected: mode === 'start' }}
-          onPress={() => setMode('start')}
-          style={[styles.mode, mode === 'start' && styles.modeSelected]}
-        >
-          <AppText style={[styles.modeText, mode === 'start' && styles.modeTextSelected]}>
-            Start a call
-          </AppText>
-        </Pressable>
-        <Pressable
-          accessibilityRole="tab"
-          accessibilityState={{ selected: mode === 'join' }}
-          onPress={() => setMode('join')}
-          style={[styles.mode, mode === 'join' && styles.modeSelected]}
-        >
-          <AppText style={[styles.modeText, mode === 'join' && styles.modeTextSelected]}>
-            Join by code
-          </AppText>
-        </Pressable>
-      </View>
-
       <View style={styles.card}>
-        {mode === 'start' ? (
-          <>
-            <View style={styles.sectionHeading}>
-              <View style={styles.headingIcon}>
-                <Ionicons name="call-outline" size={20} color={theme.colors.brand} />
-              </View>
-              <View style={styles.sectionCopy}>
-                <AppText style={styles.sectionTitle}>Invite a person</AppText>
-                <AppText style={styles.sectionSubtitle}>
-                  Use their test user ID from this screen.
-                </AppText>
-              </View>
-            </View>
-            <FormField
-              label="Their user ID"
-              value={calleeId}
-              onChangeText={setCalleeId}
-              placeholder="Paste the other user’s ID"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="off"
-              maxLength={36}
-            />
-            <AppText style={styles.fieldLabel}>CALL TYPE</AppText>
-            <View style={styles.callTypes}>
-              <CallTypeOption
-                type="AUDIO"
-                selected={callType === 'AUDIO'}
-                onPress={() => setCallType('AUDIO')}
-              />
-              <CallTypeOption
-                type="VIDEO"
-                selected={callType === 'VIDEO'}
-                onPress={() => setCallType('VIDEO')}
-              />
-            </View>
-            <PrimaryButton
-              title="Create private call"
-              loading={createCall.isPending}
-              disabled={!calleeId.trim()}
-              onPress={() => createCall.mutate()}
-            />
-            {createdCallId ? (
-              <View style={styles.waitingCard}>
-                <View style={styles.waitingHeader}>
-                  <View style={[styles.statusDot, accepted && styles.statusDotActive]} />
-                  <AppText style={styles.waitingTitle}>
-                    {accepted ? 'They accepted' : 'Waiting for them to join'}
-                  </AppText>
-                  {status.isFetching ? <AppText style={styles.refreshing}>UPDATING</AppText> : null}
-                </View>
-                <AppText style={styles.waitingHint}>
-                  Share this call ID with the other device:
-                </AppText>
-                <AppText selectable style={styles.callCode}>
-                  {createdCallId}
-                </AppText>
-                <AppText style={styles.waitingHint}>
-                  The other person enters it under Join by code. Your room token is issued only
-                  after they accept.
-                </AppText>
-                {accepted ? (
-                  <PrimaryButton
-                    title="Join call"
-                    loading={joinCall.isPending}
-                    onPress={() => joinCall.mutate(createdCallId)}
-                  />
-                ) : null}
-              </View>
-            ) : null}
-          </>
-        ) : (
-          <>
-            <View style={styles.sectionHeading}>
-              <View style={styles.headingIcon}>
-                <Ionicons name="enter-outline" size={20} color={theme.colors.brand} />
-              </View>
-              <View style={styles.sectionCopy}>
-                <AppText style={styles.sectionTitle}>Join a call</AppText>
-                <AppText style={styles.sectionSubtitle}>
-                  Ask the caller to share the call ID.
-                </AppText>
-              </View>
-            </View>
-            <FormField
-              label="Call ID"
-              value={callIdInput}
-              onChangeText={setCallIdInput}
-              placeholder="Paste the call ID"
-              autoCapitalize="none"
-              autoCorrect={false}
-              autoComplete="off"
-              maxLength={36}
-            />
-            <AppText style={styles.privacyNote}>
-              Only the invited account can accept and receive a LiveKit token.
-            </AppText>
-            <PrimaryButton
-              title="Accept and join"
-              loading={joinCall.isPending}
-              disabled={!callIdInput.trim()}
-              onPress={() => joinCall.mutate(callIdInput)}
-            />
-          </>
-        )}
+        <View style={styles.sectionHeading}>
+          <View style={styles.headingIcon}>
+            <Ionicons name="call-outline" size={20} color={theme.colors.brand} />
+          </View>
+          <View style={styles.sectionCopy}>
+            <AppText style={styles.sectionTitle}>Call a LandConnect user</AppText>
+            <AppText style={styles.sectionSubtitle}>They will see an incoming call screen.</AppText>
+          </View>
+        </View>
+        <FormField
+          label="Their user ID"
+          value={calleeId}
+          onChangeText={setCalleeId}
+          placeholder="Paste their user ID"
+          autoCapitalize="none"
+          autoCorrect={false}
+          autoComplete="off"
+          maxLength={36}
+        />
+        <AppText style={styles.fieldLabel}>CALL TYPE</AppText>
+        <View style={styles.callTypes}>
+          <CallTypeOption
+            type="AUDIO"
+            selected={callType === 'AUDIO'}
+            onPress={() => setCallType('AUDIO')}
+          />
+          <CallTypeOption
+            type="VIDEO"
+            selected={callType === 'VIDEO'}
+            onPress={() => setCallType('VIDEO')}
+          />
+        </View>
+        <PrimaryButton
+          title="Start private call"
+          loading={pending}
+          disabled={!calleeId.trim()}
+          onPress={() => void startCall()}
+        />
         <InlineError message={error ? apiErrorMessage(error) : null} />
+        <AppText style={styles.privacyNote}>
+          Only the invited account can accept. Your phone number stays private.
+        </AppText>
       </View>
     </ScrollView>
   );
@@ -266,6 +183,16 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   subtitle: { color: theme.colors.muted, fontSize: 14, marginTop: 4 },
+  outcome: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    padding: 12,
+    borderRadius: 14,
+    backgroundColor: '#EAF1E8',
+    marginBottom: 14,
+  },
+  outcomeText: { color: theme.colors.brand, fontSize: 13, fontWeight: '700' },
   identityCard: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -289,31 +216,6 @@ const styles = StyleSheet.create({
   identityTitle: { color: theme.colors.brand, fontSize: 12, fontWeight: '800' },
   identityValue: { color: theme.colors.muted, fontSize: 10, fontFamily: 'monospace' },
   copyHint: { color: theme.colors.muted, fontSize: 8, fontWeight: '800', letterSpacing: 0.6 },
-  modeSwitch: {
-    flexDirection: 'row',
-    gap: 7,
-    padding: 5,
-    backgroundColor: '#EAEDE4',
-    borderRadius: 17,
-    marginBottom: 13,
-  },
-  mode: {
-    flex: 1,
-    alignItems: 'center',
-    justifyContent: 'center',
-    minHeight: 43,
-    borderRadius: 13,
-  },
-  modeSelected: {
-    backgroundColor: theme.colors.surface,
-    shadowColor: '#10271A',
-    shadowOpacity: 0.07,
-    shadowRadius: 7,
-    shadowOffset: { width: 0, height: 3 },
-    elevation: 1,
-  },
-  modeText: { color: theme.colors.muted, fontSize: 13, fontWeight: '700' },
-  modeTextSelected: { color: theme.colors.brand },
   card: {
     backgroundColor: theme.colors.surface,
     borderWidth: 1,
@@ -362,26 +264,11 @@ const styles = StyleSheet.create({
   callTypeSelected: { backgroundColor: theme.colors.brand, borderColor: theme.colors.brand },
   callTypeText: { color: theme.colors.text, fontSize: 13, fontWeight: '700' },
   callTypeTextSelected: { color: theme.colors.white },
-  waitingCard: {
-    marginTop: 17,
-    padding: 15,
-    borderRadius: 16,
-    backgroundColor: '#F4F6EF',
-    borderWidth: 1,
-    borderColor: theme.colors.border,
+  privacyNote: {
+    color: theme.colors.muted,
+    fontSize: 11,
+    lineHeight: 17,
+    marginTop: 10,
+    textAlign: 'center',
   },
-  waitingHeader: { flexDirection: 'row', alignItems: 'center', gap: 8 },
-  statusDot: { width: 8, height: 8, borderRadius: 4, backgroundColor: theme.colors.accent },
-  statusDotActive: { backgroundColor: '#4A9363' },
-  waitingTitle: { flex: 1, color: theme.colors.text, fontSize: 13, fontWeight: '800' },
-  refreshing: { color: theme.colors.muted, fontSize: 8, fontWeight: '800', letterSpacing: 0.8 },
-  waitingHint: { color: theme.colors.muted, fontSize: 12, lineHeight: 18, marginTop: 9 },
-  callCode: {
-    color: theme.colors.brand,
-    fontSize: 13,
-    fontWeight: '700',
-    marginTop: 7,
-    letterSpacing: 0.2,
-  },
-  privacyNote: { color: theme.colors.muted, fontSize: 12, lineHeight: 18, marginBottom: 9 },
 });

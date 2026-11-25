@@ -4,12 +4,18 @@ import {
   createCallController,
   endCallController,
   getCallStatusController,
+  getActiveCallController,
   joinCallController,
 } from './call.controller.js';
 import type { CallService } from './call.service.js';
 
 export function createCallRoutes(service: CallService): FastifyPluginAsync {
   return async (app) => {
+    app.get('/active', {
+      preHandler: authenticate,
+      config: { rateLimit: { max: 30, timeWindow: '1 minute' } },
+      handler: getActiveCallController(service),
+    });
     app.post('/', {
       preHandler: authenticate,
       config: { rateLimit: { max: 10, timeWindow: '1 minute' } },

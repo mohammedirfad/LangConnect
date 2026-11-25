@@ -24,10 +24,27 @@ Login and registration use per-IP rate limits. Refresh and logout have separate 
 
 The reusable `authenticate` pre-handler validates access-token identity. `requireRole('SELLER', 'BROKER')` is available for seller/broker-only operations. Ownership checks will be added with listing endpoints.
 
-## Direct calls (Phase 2)
+## Direct calls (Phases 2–3)
 
-All call routes require a bearer access token and are rate limited. `POST /api/v1/calls` accepts `{ "calleeId": "<user UUID>", "type": "AUDIO" | "VIDEO" }` and creates a `RINGING` call. A caller can read the call ID/status; only the callee can accept it with `POST /api/v1/calls/{callId}/join`. Once accepted, both participants can request their own LiveKit token from that join route. `GET /api/v1/calls/{callId}` is participant-only; `POST /api/v1/calls/{callId}/end` ends the call and asks LiveKit to delete the room.
+The REST call routes remain available for status checks and recovery. `POST /api/v1/calls` accepts `{ "calleeId": "<user UUID>", "type": "AUDIO" | "VIDEO" }`; `GET /api/v1/calls/{callId}` is participant-only; `POST /api/v1/calls/{callId}/join` issues a participant-scoped LiveKit token after acceptance; and `POST /api/v1/calls/{callId}/end` ends the call. Every route requires a bearer access token and has a route-specific rate limit.
 
-Tokens are signed on the server, limited to one room and one opaque participant identity, expire in 10 minutes, and cannot publish data tracks. The server never returns the LiveKit API secret. Users who have blocked one another cannot create calls. Phase 2 uses a shared call ID for manual two-device testing; socket invitations, ringing notifications, busy state, rejection, and 30-second missed-call handling belong to Phase 3.
+`GET /api/v1/calls/active` returns only the authenticated user's current `RINGING` or `ACCEPTED` call, or `{ "call": null }`. Mobile clients use it after reconnecting so a brief network drop does not lose an incoming ring or accepted call.
+
+Socket.IO is attached to the API origin. Authenticate the handshake with `auth: { token: "<15-minute access token>" }`. The server validates the JWT signature, issuer, audience, expiry, and role, then joins that socket to a server-chosen per-user room. Clients must not choose room names or user IDs for event routing. Call event input is Zod-validated, payload size is bounded, and call actions are limited per user.
+
+| Client event  | Payload              | Acknowledgement / effect                                                                                                                 |
+| ------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `call:invite` | `{ calleeId, type }` | Creates a `RINGING` record, acknowledges `{ ok: true, data: { call } }`, and sends `call:incoming` to the callee.                        |
+| `call:accept` | `{ callId }`         | Only the callee can accept. Acknowledges the callee's LiveKit session and sends `call:accepted` with the caller's session to the caller. |
+| `call:reject` | `{ callId }`         | Only the callee can reject a ringing call; emits `call:rejected` to the caller and stores `REJECTED`.                                    |
+| `call:end`    | `{ callId }`         | Either participant may end a live/ringing call; emits `call:ended` to the other participant and stores `ENDED`.                          |
+
+Server events `call:incoming`, `call:accepted`, `call:rejected`, `call:missed`, and `call:ended` contain only the call DTO and, on acceptance, the relevant participant's LiveKit token. Errors use `{ ok: false, error: { code, message } }`; `CALL_BUSY` means either participant already has a `RINGING` or `ACCEPTED` call. Repeated or unauthorized state transitions fail without issuing room tokens.
+
+Ringing calls transition to `MISSED` after 30 seconds. A background sweep also expires overdue calls after an API restart. The transition is conditional on the persisted `RINGING` status so acceptance, rejection, ending, and timeout cannot all win. PostgreSQL advisory transaction locks serialize invitations involving the same accounts. Blocked users cannot call one another.
+
+Tokens are signed on the server, limited to one room and one opaque participant identity, expire in 10 minutes, and cannot publish data tracks. The server never returns the LiveKit API secret. Socket authorization uses only the access token and is disconnected when that token expires; the mobile client obtains a refreshed access token and reconnects. No phone or email is included in call signaling.
+
+This gateway stores live socket presence and timers in the API process. Run one API instance for this prototype; horizontal deployment needs a shared Socket.IO adapter and a distributed timer/lock strategy. Incoming rings currently require the app to have a live Socket.IO connection; push/background ringing is not included in this phase.
 
 All request bodies, parameters, and query strings will be validated with Zod. Responses use explicit DTOs, and authentication failures and server errors will not expose stack traces or secrets. Email is returned only from authenticated account endpoints; public listing DTOs will omit email and phone.

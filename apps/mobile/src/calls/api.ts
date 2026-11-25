@@ -29,6 +29,10 @@ export const callsApi = {
     const response = await apiClient.get<{ call: CallDto }>(`/calls/${callId}`);
     return response.data;
   },
+  async active(): Promise<{ call: CallDto | null }> {
+    const response = await apiClient.get<{ call: CallDto | null }>('/calls/active');
+    return response.data;
+  },
   async join(callId: string): Promise<CallJoinResponse> {
     const response = await apiClient.post<CallJoinResponse>(`/calls/${callId}/join`);
     return response.data;
